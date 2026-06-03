@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>File Sharing App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+</head>
+<body>
+  <div class="container">
+
+    <div class="app-header">
+      <i class="ti ti-folder-filled"></i>
+      <h1>file sharing</h1>
+    </div>
+
+    <!-- Upload zone -->
+    <div class="drop-zone" id="dropZone"
+         ondragover="handleDrag(event,true)"
+         ondragleave="handleDrag(event,false)"
+         ondrop="handleDrop(event)">
+      <i class="ti ti-cloud-upload dz-icon"></i>
+      <p class="dz-label">drag &amp; drop files here</p>
+      <p class="dz-sub">or click the button to browse</p>
+      <form action="/upload" method="POST" enctype="multipart/form-data" id="uploadForm">
+        <button type="button" class="upload-btn"
+                onclick="document.getElementById('fileInput').click()">
+          <i class="ti ti-plus"></i> choose file
+        </button>
+        <input type="file" name="file" id="fileInput" style="display:none"
+               onchange="document.getElementById('uploadForm').submit()">
+      </form>
+      <div class="progress-wrap" id="progressWrap">
+        <div class="progress-bg"><div class="progress-bar" id="progressBar"></div></div>
+        <p class="progress-label" id="progressLabel">uploading…</p>
+      </div>
+    </div>
+
+    <!-- Storage bar -->
+    <div class="storage-row">
+      <i class="ti ti-database"></i>
+      <div class="storage-track">
+        <div class="storage-fill" id="storageFill"></div>
+      </div>
+      <span class="storage-label" id="storageLabel">calculating…</span>
+    </div>
+
+    <!-- File list -->
+    <div class="section-header">
+      <span class="section-title">uploaded files</span>
+      <span class="badge">{{ files|length }} file{{ 's' if files|length != 1 }}</span>
+    </div>
+
+    {% if files %}
+    <ul class="file-list" id="fileList">
+      {% for file in files %}
+      {% set ext = file.rsplit('.',1)[-1].lower() %}
+      {% set icon_cls =
+          'fi-pdf' if ext == 'pdf' else
+          'fi-img' if ext in ['png','jpg','jpeg','gif','webp','svg'] else
+          'fi-doc' if ext in ['doc','docx','txt','md'] else
+          'fi-zip' if ext in ['zip','rar','7z','tar'] else
+          'fi-xls' if ext in ['xls','xlsx','csv'] else
+          'fi-other' %}
+      {% set icon =
+          'ti-file-type-pdf' if ext == 'pdf' else
+          'ti-photo'         if ext in ['png','jpg','jpeg','gif','webp','svg'] else
+          'ti-file-text'     if ext in ['doc','docx','txt','md'] else
+          'ti-file-zip'      if ext in ['zip','rar','7z','tar'] else
+          'ti-file-spreadsheet' if ext in ['xls','xlsx','csv'] else
+          'ti-file' %}
+      <li class="file-card" id="card-{{ loop.index }}">
+        <div class="file-icon {{ icon_cls }}">
+          <i class="ti {{ icon }}"></i>
+        </div>
+        <div class="file-info">
+          <span class="file-name">{{ file }}</span>
+          <span class="file-meta">
+            <i class="ti ti-clock"></i> just now
+          </span>
+        </div>
+        <div class="file-actions">
+          <a class="icon-btn" href="/download/{{ file }}" title="Download">
+            <i class="ti ti-download"></i>
+          </a>
+          <button class="icon-btn" title="Copy link"
+                  onclick="copyLink('{{ file }}', this)">
+            <i class="ti ti-link"></i>
+          </button>
+          <form action="/delete/{{ file }}" method="POST" style="display:inline"
+                onsubmit="return confirmDelete(event, 'card-{{ loop.index }}')">
+            <button class="icon-btn danger" type="submit" title="Delete">
+              <i class="ti ti-trash"></i>
+            </button>
+          </form>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty-state" id="emptyState">
+      <i class="ti ti-inbox"></i>
+      <p>no files uploaded yet</p>
+    </div>
+    {% endif %}
+
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast">
+    <i class="ti ti-circle-check"></i>
+    <span id="toastMsg"></span>
+  </div>
+
+  <script>
+    // Drag & drop highlight
+    function handleDrag(e, over) {
+      e.preventDefault();
+      document.getElementById('dropZone').classList.toggle('dz-hover', over);
+    }
+    function handleDrop(e) {
+      e.preventDefault();
+      handleDrag(e, false);
+      const dt = new DataTransfer();
+      dt.items.add(e.dataTransfer.files[0]);
+      const input = document.getElementById('fileInput');
+      input.files = dt.files;
+      simulateProgress(() => document.getElementById('uploadForm').submit());
+    }
+
+    // Progress bar on normal upload too
+    document.getElementById('fileInput').addEventListener('change', () => {
+      simulateProgress(() => document.getElementById('uploadForm').submit());
+    });
+    // Override the inline onchange so we control timing
+    document.getElementById('fileInput').onchange = null;
+
+    function simulateProgress(done) {
+      const wrap = document.getElementById('progressWrap');
+      const bar  = document.getElementById('progressBar');
+      const lbl  = document.getElementById('progressLabel');
+      wrap.style.display = 'block';
+      let pct = 0;
+      const iv = setInterval(() => {
+        pct += Math.random() * 20 + 10;
+        if (pct >= 95) { pct = 95; clearInterval(iv); done(); }
+        bar.style.width = Math.min(Math.round(pct), 100) + '%';
+        lbl.textContent  = 'uploading… ' + Math.min(Math.round(pct), 100) + '%';
+      }, 120);
+    }
+
+    // Fake storage bar (swap for real data if you track sizes server-side)
+    (function() {
+      const count = document.querySelectorAll('.file-card').length;
+      const pct   = Math.min(count * 8, 100);
+      document.getElementById('storageFill').style.width = pct + '%';
+      document.getElementById('storageLabel').textContent = count + ' file' + (count !== 1 ? 's' : '') + ' stored';
+    })();
+
+    // Smooth delete
+    function confirmDelete(e, cardId) {
+      e.preventDefault();
+      const card = document.getElementById(cardId);
+      card.style.transition = 'opacity 0.2s, transform 0.2s';
+      card.style.opacity  = '0';
+      card.style.transform = 'translateX(20px)';
+      showToast('File deleted');
+      setTimeout(() => card.closest('form') ? e.target.closest('form').submit() : null, 220);
+      // Actually submit the parent form after animation
+      setTimeout(() => { e.target.closest('form').submit(); }, 220);
+      return false;
+    }
+
+    // Copy link
+    function copyLink(filename, btn) {
+      const url = window.location.origin + '/download/' + encodeURIComponent(filename);
+      navigator.clipboard.writeText(url).then(() => {
+        btn.innerHTML = '<i class="ti ti-check"></i>';
+        showToast('Link copied!');
+        setTimeout(() => btn.innerHTML = '<i class="ti ti-link"></i>', 1500);
+      });
+    }
+
+    // Toast
+    let toastTimer;
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      document.getElementById('toastMsg').textContent = msg;
+      t.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
+    }
+  </script>
+</body>
+</html>
